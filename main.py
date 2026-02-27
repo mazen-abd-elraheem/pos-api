@@ -29,6 +29,7 @@ from routers import (
     tables,
     permissions,
     settings_router,
+    inventory,
 )
 
 # ──────────────────────────────────────────────
@@ -111,6 +112,7 @@ app.include_router(recipes.router, prefix="/api/recipes", tags=["Recipes"])
 app.include_router(shelves.router, prefix="/api/shelves", tags=["Shelves"])
 app.include_router(tables.router, prefix="/api/tables", tags=["Tables"])
 app.include_router(permissions.router, prefix="/api/permissions", tags=["Permissions"])
+app.include_router(inventory.router, prefix="/api/inventory", tags=["Inventory"])
 app.include_router(settings_router.router, prefix="/api/settings", tags=["Settings"])
 
 
