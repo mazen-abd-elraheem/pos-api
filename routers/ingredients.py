@@ -12,6 +12,17 @@ from auth import get_current_user
 router = APIRouter()
 
 
+async def _bump_version():
+    """Auto-increment change_version after any write."""
+    try:
+        await execute(
+            "UPDATE app_config SET config_value = CAST(config_value AS UNSIGNED) + 1 "
+            "WHERE config_key = 'change_version'"
+        )
+    except Exception:
+        pass
+
+
 @router.get("")
 async def index(user_data: dict = Depends(get_current_user)):
     """GET /api/ingredients — list all ingredients."""
@@ -48,6 +59,7 @@ async def store(body: dict, user_data: dict = Depends(get_current_user)):
                 user_data.get("tenant_id"),
             ],
         )
+        await _bump_version()
         return JSONResponse(
             {"success": True, "id": iid, "message": "Ingredient created"}, status_code=201
         )
@@ -79,6 +91,7 @@ async def update(ingredient_id: int, body: dict, user_data: dict = Depends(get_c
     try:
         values.append(ingredient_id)
         await execute(f"UPDATE ingredients SET {', '.join(fields)} WHERE id = %s", values)
+        await _bump_version()
         return {"success": True, "message": "Ingredient updated"}
     except Exception as e:
         if "Duplicate" in str(e) or "1062" in str(e):
@@ -96,4 +109,34 @@ async def update(ingredient_id: int, body: dict, user_data: dict = Depends(get_c
 async def destroy(ingredient_id: int, user_data: dict = Depends(get_current_user)):
     """DELETE /api/ingredients/{id} — delete an ingredient."""
     await execute("DELETE FROM ingredients WHERE id = %s", [ingredient_id])
+    await _bump_version()
     return {"success": True, "message": "Ingredient deleted"}
+
+
+@router.post("/{ingredient_id}/movement")
+async def record_movement(ingredient_id: int, body: dict, user_data: dict = Depends(get_current_user)):
+    """POST /api/ingredients/{id}/movement — record stock movement."""
+    from database import fetch_one as _fetch_one
+    ingredient = await _fetch_one("SELECT id, current_stock FROM ingredients WHERE id = %s", [ingredient_id])
+    if not ingredient:
+        return JSONResponse({"error": True, "message": "Ingredient not found"}, status_code=404)
+
+    quantity = body.get("quantity", 0)
+    new_stock = (ingredient["current_stock"] or 0) + quantity
+
+    await execute("UPDATE ingredients SET current_stock = %s WHERE id = %s", [new_stock, ingredient_id])
+    await execute(
+        "INSERT INTO ingredient_stock_movements (ingredient_id, movement_type, quantity, cost, notes, user, reference_id) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        [
+            ingredient_id,
+            body.get("movement_type", "adjustment"),
+            quantity,
+            body.get("cost", 0),
+            body.get("notes", ""),
+            body.get("user", ""),
+            body.get("reference_id"),
+        ],
+    )
+    await _bump_version()
+    return {"success": True, "message": "Movement recorded", "new_stock": new_stock}

@@ -10,7 +10,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends
 
-from database import fetch_all, fetch_one
+from database import fetch_all, fetch_one, execute
 from auth import get_current_user
 
 router = APIRouter()
@@ -228,9 +228,46 @@ async def get_all(user_data: dict = Depends(get_current_user)):
     }
 
 
+@router.get("/change_version")
+async def get_change_version():
+    """Return the current change_version counter for cross-device sync polling."""
+    try:
+        row = await fetch_one(
+            "SELECT config_value FROM app_config WHERE config_key = 'change_version'"
+        )
+        version = int(row["config_value"]) if row else 0
+    except Exception:
+        version = 0
+    return {"version": version}
+
+
+@router.post("/change_version/bump")
+async def bump_change_version_api():
+    """Increment the change_version counter (called after writes)."""
+    try:
+        row = await fetch_one(
+            "SELECT config_value FROM app_config WHERE config_key = 'change_version'"
+        )
+        if row:
+            new_ver = int(row["config_value"]) + 1
+            await execute(
+                "UPDATE app_config SET config_value = %s WHERE config_key = 'change_version'",
+                [str(new_ver)],
+            )
+        else:
+            new_ver = 1
+            await execute(
+                "INSERT INTO app_config (config_key, config_value) VALUES ('change_version', '1')"
+            )
+        return {"version": new_ver}
+    except Exception as e:
+        return {"version": 0, "error": str(e)}
+
+
 async def _safe(coro_func, *args):
     """Run a query safely — return [] on error instead of crashing."""
     try:
         return await coro_func(*args)
     except Exception:
         return []
+

@@ -13,11 +13,11 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 class Settings:
     """Application settings read from environment variables."""
 
-    DB_HOST: str = os.getenv("DB_HOST", "localhost")
+    DB_HOST: str = os.getenv("DB_HOST", "pos-server-system.mysql.database.azure.com")
     DB_PORT: int = int(os.getenv("DB_PORT", "3306"))
-    DB_NAME: str = os.getenv("DB_NAME", "u611315500_pos")
-    DB_USER: str = os.getenv("DB_USER", "root")
-    DB_PASSWORD: str = os.getenv("DB_PASSWORD", "")
+    DB_NAME: str = os.getenv("DB_NAME", "pos-system")
+    DB_USER: str = os.getenv("DB_USER", "adminmazen")
+    DB_PASSWORD: str = os.getenv("DB_PASSWORD", "012m@Mazen")
     DB_SSL: bool = os.getenv("DB_SSL", "false").lower() == "true"
 
     JWT_SECRET: str = os.getenv("JWT_SECRET", "change-this-secret-key")
