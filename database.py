@@ -35,7 +35,7 @@ async def get_pool() -> aiomysql.Pool:
             autocommit=True,
             minsize=2,
             maxsize=10,
-            ssl=ssl_ctx,
+            ssl=True,
         )
         logger.info(f"DB pool created: {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")
     return _pool
