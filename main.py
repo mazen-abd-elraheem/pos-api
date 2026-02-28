@@ -104,6 +104,18 @@ async def timing_middleware(request: Request, call_next):
     return response
 
 
+# Global exception handler — surface actual errors instead of bare 500
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    logger.error(f"Unhandled error on {request.method} {request.url.path}: {exc}")
+    logger.error(traceback.format_exc())
+    return JSONResponse(
+        status_code=500,
+        content={"error": True, "message": str(exc), "path": str(request.url.path)},
+    )
+
+
 # ──────────────────────────────────────────────
 # Mount routers
 # ──────────────────────────────────────────────
