@@ -219,6 +219,162 @@ async def store(body: dict, user_data: dict = Depends(get_current_user)):
         )
 
 
+@router.post("/complete")
+async def complete_sale(body: dict, user_data: dict = Depends(get_current_user)):
+    """POST /api/sales/complete — single-call sale: report + sale + stock deduction.
+
+    Replaces 3 sequential API calls with 1 server-side operation.
+    Accepts: day (DD-MM-YYYY), items, total_amount, customer, employee, method.
+    Returns: sale_id, report_id, order_number.
+    """
+    day = body.get("day", datetime.now().strftime("%d-%m-%Y"))
+    cart = body.get("items") or body.get("products") or []
+    if not cart:
+        return JSONResponse({"error": True, "message": "No items in cart"}, status_code=400)
+
+    employee = body.get("employee") or user_data.get("username", "Unknown")
+
+    try:
+        # Step 1: Get or create daily report (server-side, no round-trip)
+        report = await fetch_one(
+            "SELECT id, name, date FROM reports WHERE date = %s", [day]
+        )
+        if not report:
+            report_id = await execute(
+                "INSERT INTO reports (name, date, cashier, employee) VALUES (%s, %s, 'admin', %s)",
+                [f"report_{day}", day, employee],
+            )
+        else:
+            report_id = report["id"]
+
+        # Step 2: Build sale + stock deduction queries (same as store() but with report_id built-in)
+        order_number = body.get("order_number") or (
+            f"ORD-{datetime.now().strftime('%Y%m%d')}-{random.randint(1, 9999):04d}"
+        )
+        products_json = json.dumps(cart, ensure_ascii=False)
+        total_items = body.get("total_items") or sum(item.get("quantity", 1) for item in cart)
+
+        queries: list[tuple[str, list]] = []
+
+        # Insert sale record
+        queries.append((
+            "INSERT INTO sales (order_number, date, time, products, total_items, total_amount, "
+            "report_id, customer, employee, method, is_refunded, tenant_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s)",
+            [
+                order_number,
+                body.get("date") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                body.get("time") or datetime.now().strftime("%H:%M:%S"),
+                products_json, total_items, body.get("total_amount", 0),
+                report_id, body.get("customer"), employee,
+                body.get("method", "Cash"), body.get("tenant_id"),
+            ],
+        ))
+
+        # Batch-load products for stock deduction
+        cart_ids = [item.get("product_id") or item.get("id") for item in cart if item.get("product_id") or item.get("id")]
+        if cart_ids:
+            placeholders = ",".join(["%s"] * len(cart_ids))
+            products = await fetch_all(
+                f"SELECT id, title, stock FROM products WHERE id IN ({placeholders})", cart_ids
+            )
+            products_map = {p["id"]: p for p in products}
+        else:
+            products_map = {}
+
+        # Load shelves for shelf-aware deduction
+        shelves = await fetch_all(
+            "SELECT id, product_id, current_quantity FROM shelves WHERE product_id IS NOT NULL AND current_quantity > 0 ORDER BY id"
+        ) if cart_ids else []
+        shelves_by_product = {}
+        for s in shelves:
+            shelves_by_product.setdefault(s["product_id"], []).append(s)
+
+        # Process each cart item
+        for item in cart:
+            product_id = item.get("product_id") or item.get("id")
+            quantity = item.get("quantity", 1)
+            product = products_map.get(product_id)
+            if not product:
+                continue  # Skip unknown products instead of blocking the sale
+
+            remaining = quantity
+            product_shelves = shelves_by_product.get(product_id, [])
+            for shelf in product_shelves:
+                if remaining <= 0:
+                    break
+                available = shelf["current_quantity"] or 0
+                deduct = min(remaining, available)
+                if deduct > 0:
+                    queries.append((
+                        "UPDATE shelves SET current_quantity = current_quantity - %s WHERE id = %s",
+                        [deduct, shelf["id"]]
+                    ))
+                    shelf["current_quantity"] -= deduct
+                    remaining -= deduct
+
+            if remaining > 0 and (product["stock"] or 0) >= remaining:
+                queries.append((
+                    "UPDATE products SET stock = stock - %s WHERE id = %s",
+                    [remaining, product_id]
+                ))
+
+            queries.append((
+                "INSERT INTO stock_exits (name, product_id, quantity, report_id) VALUES (%s, %s, %s, %s)",
+                [product["title"], product_id, quantity, report_id]
+            ))
+
+        # Recipe ingredient deduction
+        if cart_ids:
+            placeholders = ",".join(["%s"] * len(cart_ids))
+            recipe_items = await fetch_all(
+                f"SELECT product_id, ingredient_id, quantity_needed FROM recipe_items WHERE product_id IN ({placeholders})",
+                cart_ids
+            )
+        else:
+            recipe_items = []
+
+        if recipe_items:
+            ingredient_ids = list({ri["ingredient_id"] for ri in recipe_items if ri["ingredient_id"]})
+            if ingredient_ids:
+                placeholders = ",".join(["%s"] * len(ingredient_ids))
+                ingredients = await fetch_all(
+                    f"SELECT id, name, current_stock FROM ingredients WHERE id IN ({placeholders})",
+                    ingredient_ids
+                )
+                ingredients_map = {ing["id"]: ing for ing in ingredients}
+            else:
+                ingredients_map = {}
+
+            cart_qty_map = {(item.get("product_id") or item.get("id")): item.get("quantity", 1) for item in cart}
+            for ri in recipe_items:
+                ingredient = ingredients_map.get(ri["ingredient_id"])
+                if not ingredient:
+                    continue
+                required_qty = ri["quantity_needed"] * cart_qty_map.get(ri["product_id"], 1)
+                if ingredient["current_stock"] >= required_qty:
+                    queries.append((
+                        "UPDATE ingredients SET current_stock = current_stock - %s WHERE id = %s",
+                        [required_qty, ingredient["id"]]
+                    ))
+                    ingredient["current_stock"] -= required_qty
+
+        # Execute everything atomically
+        sale_id = await execute_transaction(queries)
+        await _bump_version()
+        return JSONResponse(
+            {"id": sale_id, "report_id": report_id, "order_number": order_number, "message": "Sale completed"},
+            status_code=201,
+        )
+
+    except Exception as e:
+        import traceback
+        return JSONResponse(
+            {"error": True, "message": f"Complete sale failed: {str(e)}", "traceback": traceback.format_exc()},
+            status_code=500,
+        )
+
+
 @router.get("/report")
 async def report(
     start_date: str = Query(default_factory=lambda: datetime.now().strftime("%Y-%m-%d")),
