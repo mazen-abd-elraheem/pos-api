@@ -59,7 +59,25 @@ async def get_report(report_id: int, user: dict = Depends(get_current_user)):
 @router.get("/by-date/{day}")
 async def get_report_by_date(day: str, user: dict = Depends(get_current_user)):
     """GET /api/reports/by-date/{day} — get report by date."""
+    # Try exact match first
     report = await fetch_one("SELECT id, name, date, cashier, employee FROM sales_reports WHERE date = %s", [day])
+    if not report:
+        # Try converting DD-MM-YYYY → YYYY-MM-DD for MySQL date columns
+        try:
+            parts = day.split("-")
+            if len(parts) == 3 and len(parts[0]) == 2:
+                converted = f"{parts[2]}-{parts[1]}-{parts[0]}"
+                report = await fetch_one(
+                    "SELECT id, name, date, cashier, employee FROM sales_reports WHERE date = %s", [converted]
+                )
+        except Exception:
+            pass
+    if not report:
+        # Also try matching by report name (legacy format: report_DD-MM-YYYY or report_YYYY-MM-DD)
+        report = await fetch_one(
+            "SELECT id, name, date, cashier, employee FROM sales_reports WHERE name LIKE %s",
+            [f"%{day}%"]
+        )
     return {"report": report}
 
 

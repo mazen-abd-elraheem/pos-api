@@ -93,11 +93,15 @@ async def get_audit_logs(
 @router.post("/audit")
 async def log_audit(body: dict = Body(...), user: dict = Depends(get_current_user)):
     """POST /api/devices/audit"""
+    import json as _json
+    details = body.get("details")
+    if isinstance(details, (dict, list)):
+        details = _json.dumps(details, ensure_ascii=False)
     await execute(
         "INSERT INTO audit_logs (user_id, action, resource_type, resource_id, details, device_id, success, timestamp) "
         "VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())",
         [body.get("user_id"), body.get("action"), body.get("resource_type"),
-         body.get("resource_id"), body.get("details"), body.get("device_id"),
+         body.get("resource_id"), details, body.get("device_id"),
          body.get("success", 1)],
     )
     return {"message": "Audit logged"}
