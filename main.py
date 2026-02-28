@@ -180,6 +180,20 @@ async def health_check():
     return health
 
 
+@app.get("/api/health/schema")
+async def schema_check():
+    """Show columns for key tables to debug schema mismatches."""
+    tables = ["stock_exits", "stock_entries", "sales", "reports", "shelves", "products", "recipe_items", "ingredients"]
+    result = {}
+    for t in tables:
+        try:
+            rows = await fetch_all(f"DESCRIBE `{t}`")
+            result[t] = [{"field": r["Field"], "type": r["Type"]} for r in rows] if rows else "no rows"
+        except Exception as e:
+            result[t] = str(e)
+    return result
+
+
 @app.get("/")
 @app.get("/api")
 async def api_info():
