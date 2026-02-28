@@ -30,7 +30,7 @@ def _normalize_date(day: str) -> str:
 async def get_reports(user: dict = Depends(get_current_user)):
     """GET /api/reports — list all reports."""
     rows = await fetch_all(
-        "SELECT id, name, date, cashier, employee FROM sales_reports ORDER BY id DESC"
+        "SELECT id, name, date, cashier, employee FROM reports ORDER BY id DESC"
     )
     return {"reports": rows}
 
@@ -43,7 +43,7 @@ async def create_report(body: dict = Body(...), user: dict = Depends(get_current
         db_date = _normalize_date(day)  # Convert DD-MM-YYYY → YYYY-MM-DD for MySQL
         employee = body.get("employee", "admin")
         report_id = await execute(
-            "INSERT INTO sales_reports (name, date, cashier, employee) VALUES (%s, %s, 'admin', %s)",
+            "INSERT INTO reports (name, date, cashier, employee) VALUES (%s, %s, 'admin', %s)",
             [f"report_{day}", db_date, employee],
         )
 
@@ -57,7 +57,7 @@ async def create_report(body: dict = Body(...), user: dict = Depends(get_current
                         [item["name"], item.get("stock", 0), product["id"], report_id],
                     )
 
-        report = await fetch_one("SELECT id, name, date, cashier, employee FROM sales_reports WHERE id = %s", [report_id])
+        report = await fetch_one("SELECT id, name, date, cashier, employee FROM reports WHERE id = %s", [report_id])
         return {"report": report}
     except Exception as e:
         import traceback
@@ -67,7 +67,7 @@ async def create_report(body: dict = Body(...), user: dict = Depends(get_current
 @router.get("/{report_id}")
 async def get_report(report_id: int, user: dict = Depends(get_current_user)):
     """GET /api/reports/{id} — get a single report."""
-    report = await fetch_one("SELECT id, name, date, cashier, employee FROM sales_reports WHERE id = %s", [report_id])
+    report = await fetch_one("SELECT id, name, date, cashier, employee FROM reports WHERE id = %s", [report_id])
     if not report:
         return {"report": None}
     return {"report": report}
@@ -80,17 +80,17 @@ async def get_report_by_date(day: str, user: dict = Depends(get_current_user)):
         db_date = _normalize_date(day)
         # Try normalized date first
         report = await fetch_one(
-            "SELECT id, name, date, cashier, employee FROM sales_reports WHERE date = %s", [db_date]
+            "SELECT id, name, date, cashier, employee FROM reports WHERE date = %s", [db_date]
         )
         if not report and db_date != day:
             # Try original format as fallback
             report = await fetch_one(
-                "SELECT id, name, date, cashier, employee FROM sales_reports WHERE date = %s", [day]
+                "SELECT id, name, date, cashier, employee FROM reports WHERE date = %s", [day]
             )
         if not report:
             # Also try matching by report name
             report = await fetch_one(
-                "SELECT id, name, date, cashier, employee FROM sales_reports WHERE name LIKE %s",
+                "SELECT id, name, date, cashier, employee FROM reports WHERE name LIKE %s",
                 [f"%{day}%"]
             )
         return {"report": report}
@@ -102,7 +102,7 @@ async def get_report_by_date(day: str, user: dict = Depends(get_current_user)):
 @router.delete("/{report_id}")
 async def delete_report(report_id: int, user: dict = Depends(get_current_user)):
     """DELETE /api/reports/{id}"""
-    await execute("DELETE FROM sales_reports WHERE id = %s", [report_id])
+    await execute("DELETE FROM reports WHERE id = %s", [report_id])
     return {"success": True}
 
 
@@ -110,7 +110,7 @@ async def delete_report(report_id: int, user: dict = Depends(get_current_user)):
 async def remove_report_by_date(day: str, user: dict = Depends(get_current_user)):
     """DELETE /api/reports/by-date/{day}"""
     db_date = _normalize_date(day)
-    await execute("DELETE FROM sales_reports WHERE date = %s", [db_date])
+    await execute("DELETE FROM reports WHERE date = %s", [db_date])
     return {"success": True}
 
 
@@ -122,7 +122,7 @@ async def report_total(report_id: int = None, day: str = Query(None), user: dict
     if day:
         row = await fetch_one(
             "SELECT COALESCE(SUM(ps.total_amount), 0) AS total FROM product_sales ps "
-            "JOIN sales_reports sr ON ps.report_id = sr.id WHERE sr.date = %s", [day]
+            "JOIN reports sr ON ps.report_id = sr.id WHERE sr.date = %s", [day]
         )
     else:
         row = await fetch_one(
