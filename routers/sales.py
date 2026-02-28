@@ -160,7 +160,7 @@ async def store(body: dict, user_data: dict = Depends(get_current_user)):
     if cart_ids:
         placeholders = ",".join(["%s"] * len(cart_ids))
         recipe_items = await fetch_all(
-            f"SELECT product_id, ingredient_id, quantity FROM recipe_items WHERE product_id IN ({placeholders})",
+            f"SELECT product_id, ingredient_id, quantity_needed FROM recipe_items WHERE product_id IN ({placeholders})",
             cart_ids
         )
     else:
@@ -186,7 +186,7 @@ async def store(body: dict, user_data: dict = Depends(get_current_user)):
             if not ingredient:
                 continue
 
-            required_qty = ri["quantity"] * cart_qty_map.get(ri["product_id"], 1)
+            required_qty = ri["quantity_needed"] * cart_qty_map.get(ri["product_id"], 1)
             if ingredient["current_stock"] < required_qty:
                 return JSONResponse(
                     {"error": True, "message": f"Insufficient ingredient: {ingredient['name']}"},
