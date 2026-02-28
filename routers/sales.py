@@ -296,8 +296,20 @@ async def complete_sale(body: dict, user_data: dict = Depends(get_current_user))
             quantity = item.get("quantity", 1)
             product = products_map.get(product_id)
             if not product:
-                continue  # Skip unknown products instead of blocking the sale
+                continue  # Skip unknown products
 
+            # Calculate total available stock (shelves + main)
+            shelf_stock = sum(s["current_quantity"] or 0 for s in shelves_by_product.get(product_id, []))
+            main_stock = product["stock"] or 0
+            total_available = shelf_stock + main_stock
+
+            if total_available < quantity:
+                return JSONResponse(
+                    {"error": True, "message": f"Insufficient stock for {product['title']} (available: {total_available}, requested: {quantity})"},
+                    status_code=400,
+                )
+
+            # Deduct from shelves first
             remaining = quantity
             product_shelves = shelves_by_product.get(product_id, [])
             for shelf in product_shelves:
@@ -313,7 +325,8 @@ async def complete_sale(body: dict, user_data: dict = Depends(get_current_user))
                     shelf["current_quantity"] -= deduct
                     remaining -= deduct
 
-            if remaining > 0 and (product["stock"] or 0) >= remaining:
+            # Deduct any remaining from main products.stock
+            if remaining > 0:
                 queries.append((
                     "UPDATE products SET stock = stock - %s WHERE id = %s",
                     [remaining, product_id]
