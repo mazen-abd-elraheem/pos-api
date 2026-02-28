@@ -12,6 +12,17 @@ from auth import get_current_user
 router = APIRouter()
 
 
+def _normalize_date(day: str) -> str:
+    """Convert DD-MM-YYYY → YYYY-MM-DD for MySQL DATE columns.
+    Returns original string if already in YYYY-MM-DD or unrecognized format."""
+    if not day:
+        return day
+    parts = day.split("-")
+    if len(parts) == 3 and len(parts[0]) == 2 and len(parts[2]) == 4:
+        return f"{parts[2]}-{parts[1]}-{parts[0]}"  # DD-MM-YYYY → YYYY-MM-DD
+    return day  # Already YYYY-MM-DD or other format
+
+
 # ── Report CRUD ──
 
 @router.get("")
@@ -27,10 +38,11 @@ async def get_reports(user: dict = Depends(get_current_user)):
 async def create_report(body: dict = Body(...), user: dict = Depends(get_current_user)):
     """POST /api/reports — create a new daily report."""
     day = body.get("day")
+    db_date = _normalize_date(day)  # Convert DD-MM-YYYY → YYYY-MM-DD for MySQL
     employee = body.get("employee", "admin")
     report_id = await execute(
         "INSERT INTO sales_reports (name, date, cashier, employee) VALUES (%s, %s, 'admin', %s)",
-        [f"report_{day}", day, employee],
+        [f"report_{day}", db_date, employee],
     )
 
     initial_entry = body.get("initial_entry")
@@ -59,21 +71,18 @@ async def get_report(report_id: int, user: dict = Depends(get_current_user)):
 @router.get("/by-date/{day}")
 async def get_report_by_date(day: str, user: dict = Depends(get_current_user)):
     """GET /api/reports/by-date/{day} — get report by date."""
-    # Try exact match first
-    report = await fetch_one("SELECT id, name, date, cashier, employee FROM sales_reports WHERE date = %s", [day])
+    db_date = _normalize_date(day)
+    # Try normalized date first
+    report = await fetch_one(
+        "SELECT id, name, date, cashier, employee FROM sales_reports WHERE date = %s", [db_date]
+    )
+    if not report and db_date != day:
+        # Try original format as fallback
+        report = await fetch_one(
+            "SELECT id, name, date, cashier, employee FROM sales_reports WHERE date = %s", [day]
+        )
     if not report:
-        # Try converting DD-MM-YYYY → YYYY-MM-DD for MySQL date columns
-        try:
-            parts = day.split("-")
-            if len(parts) == 3 and len(parts[0]) == 2:
-                converted = f"{parts[2]}-{parts[1]}-{parts[0]}"
-                report = await fetch_one(
-                    "SELECT id, name, date, cashier, employee FROM sales_reports WHERE date = %s", [converted]
-                )
-        except Exception:
-            pass
-    if not report:
-        # Also try matching by report name (legacy format: report_DD-MM-YYYY or report_YYYY-MM-DD)
+        # Also try matching by report name
         report = await fetch_one(
             "SELECT id, name, date, cashier, employee FROM sales_reports WHERE name LIKE %s",
             [f"%{day}%"]
@@ -91,7 +100,8 @@ async def delete_report(report_id: int, user: dict = Depends(get_current_user)):
 @router.delete("/by-date/{day}")
 async def remove_report_by_date(day: str, user: dict = Depends(get_current_user)):
     """DELETE /api/reports/by-date/{day}"""
-    await execute("DELETE FROM sales_reports WHERE date = %s", [day])
+    db_date = _normalize_date(day)
+    await execute("DELETE FROM sales_reports WHERE date = %s", [db_date])
     return {"success": True}
 
 
