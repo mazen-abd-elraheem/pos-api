@@ -13,7 +13,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from config import settings
-from database import get_pool, close_pool, fetch_one
+from database import get_pool, close_pool, fetch_one, fetch_all
 
 # Import routers
 from routers import (
