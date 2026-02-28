@@ -40,11 +40,11 @@ async def create_report(body: dict = Body(...), user: dict = Depends(get_current
     """POST /api/reports — create a new daily report."""
     try:
         day = body.get("day")
-        db_date = _normalize_date(day)  # Convert DD-MM-YYYY → YYYY-MM-DD for MySQL
+        # date column is String(22) — store as-is (DD-MM-YYYY format)
         employee = body.get("employee", "admin")
         report_id = await execute(
             "INSERT INTO reports (name, date, cashier, employee) VALUES (%s, %s, 'admin', %s)",
-            [f"report_{day}", db_date, employee],
+            [f"report_{day}", day, employee],
         )
 
         initial_entry = body.get("initial_entry")
@@ -77,16 +77,17 @@ async def get_report(report_id: int, user: dict = Depends(get_current_user)):
 async def get_report_by_date(day: str, user: dict = Depends(get_current_user)):
     """GET /api/reports/by-date/{day} — get report by date."""
     try:
-        db_date = _normalize_date(day)
-        # Try normalized date first
+        # date column is String(22) — query with original format (DD-MM-YYYY)
         report = await fetch_one(
-            "SELECT id, name, date, cashier, employee FROM reports WHERE date = %s", [db_date]
+            "SELECT id, name, date, cashier, employee FROM reports WHERE date = %s", [day]
         )
-        if not report and db_date != day:
-            # Try original format as fallback
-            report = await fetch_one(
-                "SELECT id, name, date, cashier, employee FROM reports WHERE date = %s", [day]
-            )
+        if not report:
+            # Try normalized YYYY-MM-DD as fallback
+            db_date = _normalize_date(day)
+            if db_date != day:
+                report = await fetch_one(
+                    "SELECT id, name, date, cashier, employee FROM reports WHERE date = %s", [db_date]
+                )
         if not report:
             # Also try matching by report name
             report = await fetch_one(
