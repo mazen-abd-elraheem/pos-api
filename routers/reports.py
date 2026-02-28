@@ -6,6 +6,7 @@ Handles report CRUD, totals, stock entries/exits for reports.
 from datetime import datetime
 from collections import defaultdict
 from fastapi import APIRouter, Depends, Query, Body
+from fastapi.responses import JSONResponse
 from database import fetch_all, fetch_one, execute
 from auth import get_current_user
 
@@ -37,26 +38,30 @@ async def get_reports(user: dict = Depends(get_current_user)):
 @router.post("")
 async def create_report(body: dict = Body(...), user: dict = Depends(get_current_user)):
     """POST /api/reports — create a new daily report."""
-    day = body.get("day")
-    db_date = _normalize_date(day)  # Convert DD-MM-YYYY → YYYY-MM-DD for MySQL
-    employee = body.get("employee", "admin")
-    report_id = await execute(
-        "INSERT INTO sales_reports (name, date, cashier, employee) VALUES (%s, %s, 'admin', %s)",
-        [f"report_{day}", db_date, employee],
-    )
+    try:
+        day = body.get("day")
+        db_date = _normalize_date(day)  # Convert DD-MM-YYYY → YYYY-MM-DD for MySQL
+        employee = body.get("employee", "admin")
+        report_id = await execute(
+            "INSERT INTO sales_reports (name, date, cashier, employee) VALUES (%s, %s, 'admin', %s)",
+            [f"report_{day}", db_date, employee],
+        )
 
-    initial_entry = body.get("initial_entry")
-    if initial_entry:
-        for item in initial_entry:
-            product = await fetch_one("SELECT id FROM products WHERE title = %s", [item["name"]])
-            if product:
-                await execute(
-                    "INSERT INTO stock_entries (name, quantity, product_id, report_id) VALUES (%s, %s, %s, %s)",
-                    [item["name"], item.get("stock", 0), product["id"], report_id],
-                )
+        initial_entry = body.get("initial_entry")
+        if initial_entry:
+            for item in initial_entry:
+                product = await fetch_one("SELECT id FROM products WHERE title = %s", [item["name"]])
+                if product:
+                    await execute(
+                        "INSERT INTO stock_entries (name, quantity, product_id, report_id) VALUES (%s, %s, %s, %s)",
+                        [item["name"], item.get("stock", 0), product["id"], report_id],
+                    )
 
-    report = await fetch_one("SELECT id, name, date, cashier, employee FROM sales_reports WHERE id = %s", [report_id])
-    return {"report": report}
+        report = await fetch_one("SELECT id, name, date, cashier, employee FROM sales_reports WHERE id = %s", [report_id])
+        return {"report": report}
+    except Exception as e:
+        import traceback
+        return JSONResponse({"error": True, "message": str(e), "traceback": traceback.format_exc()}, status_code=500)
 
 
 @router.get("/{report_id}")
@@ -71,23 +76,27 @@ async def get_report(report_id: int, user: dict = Depends(get_current_user)):
 @router.get("/by-date/{day}")
 async def get_report_by_date(day: str, user: dict = Depends(get_current_user)):
     """GET /api/reports/by-date/{day} — get report by date."""
-    db_date = _normalize_date(day)
-    # Try normalized date first
-    report = await fetch_one(
-        "SELECT id, name, date, cashier, employee FROM sales_reports WHERE date = %s", [db_date]
-    )
-    if not report and db_date != day:
-        # Try original format as fallback
+    try:
+        db_date = _normalize_date(day)
+        # Try normalized date first
         report = await fetch_one(
-            "SELECT id, name, date, cashier, employee FROM sales_reports WHERE date = %s", [day]
+            "SELECT id, name, date, cashier, employee FROM sales_reports WHERE date = %s", [db_date]
         )
-    if not report:
-        # Also try matching by report name
-        report = await fetch_one(
-            "SELECT id, name, date, cashier, employee FROM sales_reports WHERE name LIKE %s",
-            [f"%{day}%"]
-        )
-    return {"report": report}
+        if not report and db_date != day:
+            # Try original format as fallback
+            report = await fetch_one(
+                "SELECT id, name, date, cashier, employee FROM sales_reports WHERE date = %s", [day]
+            )
+        if not report:
+            # Also try matching by report name
+            report = await fetch_one(
+                "SELECT id, name, date, cashier, employee FROM sales_reports WHERE name LIKE %s",
+                [f"%{day}%"]
+            )
+        return {"report": report}
+    except Exception as e:
+        import traceback
+        return JSONResponse({"error": True, "message": str(e), "traceback": traceback.format_exc()}, status_code=500)
 
 
 @router.delete("/{report_id}")
