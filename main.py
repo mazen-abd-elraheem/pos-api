@@ -30,6 +30,13 @@ from routers import (
     permissions,
     settings_router,
     inventory,
+    reports,
+    users,
+    payments,
+    config,
+    devices,
+    tenants,
+    bills,
 )
 
 # ──────────────────────────────────────────────
@@ -114,6 +121,13 @@ app.include_router(tables.router, prefix="/api/tables", tags=["Tables"])
 app.include_router(permissions.router, prefix="/api/permissions", tags=["Permissions"])
 app.include_router(inventory.router, prefix="/api/inventory", tags=["Inventory"])
 app.include_router(settings_router.router, prefix="/api/settings", tags=["Settings"])
+app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
+app.include_router(users.router, prefix="/api/users", tags=["Users"])
+app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
+app.include_router(config.router, prefix="/api/config", tags=["Config"])
+app.include_router(devices.router, prefix="/api/devices", tags=["Devices"])
+app.include_router(tenants.router, prefix="/api/tenants", tags=["Tenants"])
+app.include_router(bills.router, prefix="/api/bills", tags=["Bills"])
 
 
 # ──────────────────────────────────────────────
