@@ -63,3 +63,13 @@ async def batch_get(
         "permissions": list(granted.keys()),
         "role": user["role"],
     }
+
+
+@router.get("/roles")
+async def get_roles(user_data: dict = Depends(get_current_user)):
+    """GET /api/permissions/roles — all roles."""
+    rows = await fetch_all(
+        "SELECT id, name, display_name, description, level "
+        "FROM roles ORDER BY level ASC"
+    )
+    return {"roles": rows}

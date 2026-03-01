@@ -412,3 +412,72 @@ async def report(
         "payment_breakdown": payment_breakdown,
         "period": {"start": start_date, "end": end_date},
     }
+
+
+# ── Refunds ──────────────────────────────────────────────────────────────
+
+@router.get("/refunds")
+async def get_refunds(
+    date: str | None = Query(None),
+    user_data: dict = Depends(get_current_user),
+):
+    """GET /api/sales/refunds — list all refunds, optionally filtered by date."""
+    sql = (
+        "SELECT id, sale_id, order_number, refund_amount, refund_reason, "
+        "refund_type, refund_method, processed_by, refund_date, status "
+        "FROM refunds WHERE 1=1"
+    )
+    params = []
+    if date:
+        sql += " AND DATE(refund_date) = %s"
+        params.append(date)
+    sql += " ORDER BY refund_date DESC"
+
+    rows = await fetch_all(sql, params)
+    # Serialize datetime fields
+    for r in rows:
+        if isinstance(r.get("refund_date"), datetime):
+            r["refund_date"] = r["refund_date"].isoformat()
+    return {"refunds": rows}
+
+
+@router.get("/refunds/total")
+async def get_refunds_total(user_data: dict = Depends(get_current_user)):
+    """GET /api/sales/refunds/total — total lifetime refund amount."""
+    row = await fetch_one(
+        "SELECT COALESCE(SUM(refund_amount), 0) AS total FROM refunds"
+    )
+    return {"total": float(row["total"]) if row else 0.0}
+
+
+@router.post("/refunds")
+async def create_refund(body: dict, user_data: dict = Depends(get_current_user)):
+    """POST /api/sales/refunds — process a new refund."""
+    required = ["sale_id", "refund_amount"]
+    for field in required:
+        if field not in body:
+            return JSONResponse(
+                {"error": True, "message": f"Missing required field: {field}"},
+                status_code=400,
+            )
+
+    rid = await execute(
+        "INSERT INTO refunds (sale_id, order_number, refund_amount, refund_reason, "
+        "refund_type, refund_method, processed_by, refund_date, status) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), %s)",
+        [
+            body["sale_id"],
+            body.get("order_number", ""),
+            body["refund_amount"],
+            body.get("refund_reason", ""),
+            body.get("refund_type", "full"),
+            body.get("refund_method", "cash"),
+            body.get("processed_by", user_data.get("username", "")),
+            body.get("status", "completed"),
+        ],
+    )
+    await _bump_version()
+    return JSONResponse(
+        {"success": True, "id": rid, "message": "Refund processed"},
+        status_code=201,
+    )

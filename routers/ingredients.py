@@ -3,7 +3,7 @@ Ingredients Router — /api/ingredients
 Mirrors PHP IngredientController.php
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 
 from database import fetch_all, execute
@@ -31,6 +31,35 @@ async def index(user_data: dict = Depends(get_current_user)):
         "FROM ingredients ORDER BY name ASC"
     )
     return {"ingredients": ingredients}
+
+
+@router.get("/movements")
+async def get_movements(
+    date: str | None = Query(None),
+    user_data: dict = Depends(get_current_user),
+):
+    """GET /api/ingredients/movements — all ingredient stock movements."""
+    from datetime import datetime
+
+    sql = (
+        "SELECT m.id, m.ingredient_id, i.name AS ingredient_name, "
+        "m.movement_type, m.quantity, m.cost, m.notes, m.user, "
+        "m.reference_id, m.created_at "
+        "FROM ingredient_stock_movements m "
+        "LEFT JOIN ingredients i ON m.ingredient_id = i.id "
+        "WHERE 1=1"
+    )
+    params = []
+    if date:
+        sql += " AND DATE(m.created_at) = %s"
+        params.append(date)
+    sql += " ORDER BY m.created_at DESC LIMIT 500"
+
+    rows = await fetch_all(sql, params)
+    for r in rows:
+        if isinstance(r.get("created_at"), datetime):
+            r["created_at"] = r["created_at"].isoformat()
+    return {"movements": rows}
 
 
 @router.post("")

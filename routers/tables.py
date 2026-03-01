@@ -22,6 +22,46 @@ async def index(user_data: dict = Depends(get_current_user)):
     return {"tables": tables}
 
 
+@router.get("/status")
+async def tables_with_status(user_data: dict = Depends(get_current_user)):
+    """GET /api/tables/status — tables with computed pending/sent/total from order items."""
+    tables = await fetch_all(
+        "SELECT id, number, capacity, status, current_order_id "
+        "FROM tables ORDER BY number ASC"
+    )
+
+    # Get all order items grouped by table
+    items = await fetch_all(
+        "SELECT table_id, status AS item_status, "
+        "COALESCE(price, 0) * COALESCE(quantity, 1) AS line_total "
+        "FROM table_order_items"
+    )
+
+    # Build lookup: table_id → {pending, sent, total}
+    stats: dict[int, dict] = {}
+    for item in items:
+        tid = item["table_id"]
+        if tid not in stats:
+            stats[tid] = {"pending_items": 0, "sent_items": 0, "total_amount": 0.0}
+        s = stats[tid]
+        if item["item_status"] == "pending":
+            s["pending_items"] += 1
+        elif item["item_status"] in ("sent", "served"):
+            s["sent_items"] += 1
+        s["total_amount"] += float(item["line_total"] or 0)
+
+    # Merge into tables
+    for t in tables:
+        tid = t["id"]
+        s = stats.get(tid, {})
+        t["pending_items"] = s.get("pending_items", 0)
+        t["sent_items"] = s.get("sent_items", 0)
+        t["total_amount"] = round(s.get("total_amount", 0.0), 2)
+        t["order_id"] = t.get("current_order_id")
+
+    return {"tables": tables}
+
+
 @router.put("/{table_id}")
 async def update(table_id: int, body: dict, user_data: dict = Depends(get_current_user)):
     """PUT /api/tables/{id} — update a table."""
