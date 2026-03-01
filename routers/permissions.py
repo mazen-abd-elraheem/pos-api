@@ -98,3 +98,115 @@ async def get_roles_with_permissions(user_data: dict = Depends(get_current_user)
         )
         role["permissions"] = [p["name"] for p in perms]
     return {"roles": roles}
+
+
+@router.post("/grant")
+async def grant_permission(body: dict, user_data: dict = Depends(get_current_user)):
+    """POST /api/permissions/grant — grant a permission to a user."""
+    from database import fetch_one as _fetch_one
+    user_id = body.get("user_id")
+    permission_name = body.get("permission_name")
+    granted_by = body.get("granted_by", user_data.get("user_id"))
+
+    perm = await _fetch_one("SELECT id FROM permissions WHERE name = %s", [permission_name])
+    if not perm:
+        return JSONResponse({"error": True, "message": "Permission not found"}, status_code=404)
+
+    existing = await _fetch_one(
+        "SELECT id FROM user_permissions WHERE user_id = %s AND permission_id = %s",
+        [user_id, perm["id"]],
+    )
+    if existing:
+        await execute(
+            "UPDATE user_permissions SET granted = 1, granted_by = %s WHERE id = %s",
+            [granted_by, existing["id"]],
+        )
+    else:
+        await execute(
+            "INSERT INTO user_permissions (user_id, permission_id, granted, granted_by) VALUES (%s, %s, 1, %s)",
+            [user_id, perm["id"], granted_by],
+        )
+    return {"success": True, "message": f"Permission '{permission_name}' granted"}
+
+
+@router.post("/revoke")
+async def revoke_permission(body: dict, user_data: dict = Depends(get_current_user)):
+    """POST /api/permissions/revoke — revoke a permission from a user."""
+    from database import fetch_one as _fetch_one
+    user_id = body.get("user_id")
+    permission_name = body.get("permission_name")
+
+    perm = await _fetch_one("SELECT id FROM permissions WHERE name = %s", [permission_name])
+    if not perm:
+        return JSONResponse({"error": True, "message": "Permission not found"}, status_code=404)
+
+    existing = await _fetch_one(
+        "SELECT id FROM user_permissions WHERE user_id = %s AND permission_id = %s",
+        [user_id, perm["id"]],
+    )
+    if existing:
+        await execute("UPDATE user_permissions SET granted = 0 WHERE id = %s", [existing["id"]])
+    else:
+        await execute(
+            "INSERT INTO user_permissions (user_id, permission_id, granted) VALUES (%s, %s, 0)",
+            [user_id, perm["id"]],
+        )
+    return {"success": True, "message": f"Permission '{permission_name}' revoked"}
+
+
+@router.put("/batch")
+async def batch_update_permissions(body: dict, user_data: dict = Depends(get_current_user)):
+    """PUT /api/permissions/batch — grant/revoke multiple permissions at once."""
+    user_id = body.get("user_id")
+    to_grant = body.get("to_grant", [])
+    to_revoke = body.get("to_revoke", [])
+    granted_by = body.get("granted_by", user_data.get("user_id"))
+
+    all_names = list(set(to_grant + to_revoke))
+    if not all_names:
+        return {"success": True, "message": "Nothing to update"}
+
+    perms = await fetch_all(
+        "SELECT id, name FROM permissions WHERE name IN (%s)" % ",".join(["%s"] * len(all_names)),
+        all_names,
+    )
+    perm_map = {p["name"]: p["id"] for p in perms}
+
+    for name in to_grant:
+        pid = perm_map.get(name)
+        if not pid:
+            continue
+        from database import fetch_one as _fetch_one
+        existing = await _fetch_one(
+            "SELECT id FROM user_permissions WHERE user_id = %s AND permission_id = %s",
+            [user_id, pid],
+        )
+        if existing:
+            await execute(
+                "UPDATE user_permissions SET granted = 1, granted_by = %s WHERE id = %s",
+                [granted_by, existing["id"]],
+            )
+        else:
+            await execute(
+                "INSERT INTO user_permissions (user_id, permission_id, granted, granted_by) VALUES (%s, %s, 1, %s)",
+                [user_id, pid, granted_by],
+            )
+
+    for name in to_revoke:
+        pid = perm_map.get(name)
+        if not pid:
+            continue
+        from database import fetch_one as _fetch_one
+        existing = await _fetch_one(
+            "SELECT id FROM user_permissions WHERE user_id = %s AND permission_id = %s",
+            [user_id, pid],
+        )
+        if existing:
+            await execute("UPDATE user_permissions SET granted = 0 WHERE id = %s", [existing["id"]])
+        else:
+            await execute(
+                "INSERT INTO user_permissions (user_id, permission_id, granted) VALUES (%s, %s, 0)",
+                [user_id, pid],
+            )
+
+    return {"success": True, "message": f"Updated {len(to_grant)} grants, {len(to_revoke)} revokes"}

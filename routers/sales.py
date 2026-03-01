@@ -500,3 +500,11 @@ async def create_refund(body: dict, user_data: dict = Depends(get_current_user))
         {"success": True, "id": rid, "message": "Refund processed"},
         status_code=201,
     )
+
+
+@router.delete("/{sale_id}")
+async def delete_sale(sale_id: int, user_data: dict = Depends(get_current_user)):
+    """DELETE /api/sales/{id} — delete a sale."""
+    await execute("DELETE FROM sales WHERE id = %s", [sale_id])
+    await _bump_version()
+    return {"success": True, "message": "Sale deleted"}

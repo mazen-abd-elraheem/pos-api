@@ -62,3 +62,16 @@ async def destroy(customer_id: int, user_data: dict = Depends(get_current_user))
     """DELETE /api/customers/{id} — delete a customer."""
     await execute("DELETE FROM customers WHERE id = %s", [customer_id])
     return {"message": "Customer deleted"}
+
+
+@router.put("/{customer_id}/purchase")
+async def update_purchase(customer_id: int, body: dict, user_data: dict = Depends(get_current_user)):
+    """PUT /api/customers/{id}/purchase — update total purchases and award loyalty points."""
+    amount = float(body.get("amount", 0))
+    points = int(amount / 10)  # 1 point per 10 EGP
+    await execute(
+        "UPDATE customers SET total_purchases = total_purchases + %s, "
+        "loyalty_points = loyalty_points + %s WHERE id = %s",
+        [amount, points, customer_id],
+    )
+    return {"success": True, "points_earned": points}
