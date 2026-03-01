@@ -48,6 +48,21 @@ async def index(
     return {"sales": sales}
 
 
+@router.get("/by-order/{order_number}")
+async def get_by_order(order_number: str, user_data: dict = Depends(get_current_user)):
+    """GET /api/sales/by-order/{order_number} — find sale by order number."""
+    sale = await fetch_one(
+        "SELECT * FROM sales WHERE order_number = %s", [order_number]
+    )
+    if not sale:
+        return JSONResponse({"error": True, "message": "Sale not found"}, status_code=404)
+    # Serialize dates
+    for k in ("date", "time", "created_at"):
+        if isinstance(sale.get(k), datetime):
+            sale[k] = sale[k].isoformat()
+    return {"sale": sale}
+
+
 @router.post("")
 async def store(body: dict, user_data: dict = Depends(get_current_user)):
     """POST /api/sales — full sale transaction with shelf-aware deduction.
@@ -419,9 +434,10 @@ async def report(
 @router.get("/refunds")
 async def get_refunds(
     date: str | None = Query(None),
+    sale_id: int | None = Query(None),
     user_data: dict = Depends(get_current_user),
 ):
-    """GET /api/sales/refunds — list all refunds, optionally filtered by date."""
+    """GET /api/sales/refunds — list refunds, filterable by date or sale_id."""
     sql = (
         "SELECT id, sale_id, order_number, refund_amount, refund_reason, "
         "refund_type, refund_method, processed_by, refund_date, status "
@@ -431,6 +447,9 @@ async def get_refunds(
     if date:
         sql += " AND DATE(refund_date) = %s"
         params.append(date)
+    if sale_id:
+        sql += " AND sale_id = %s"
+        params.append(sale_id)
     sql += " ORDER BY refund_date DESC"
 
     rows = await fetch_all(sql, params)

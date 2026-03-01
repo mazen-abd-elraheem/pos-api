@@ -73,3 +73,28 @@ async def get_roles(user_data: dict = Depends(get_current_user)):
         "FROM roles ORDER BY level ASC"
     )
     return {"roles": rows}
+
+
+@router.get("/all")
+async def get_all_permissions(user_data: dict = Depends(get_current_user)):
+    """GET /api/permissions/all — all permission names."""
+    rows = await fetch_all("SELECT id, name, description FROM permissions ORDER BY name ASC")
+    return {"permissions": rows}
+
+
+@router.get("/roles-detail")
+async def get_roles_with_permissions(user_data: dict = Depends(get_current_user)):
+    """GET /api/permissions/roles-detail — roles with their assigned permissions."""
+    roles = await fetch_all(
+        "SELECT id, name, display_name, description, level "
+        "FROM roles ORDER BY level ASC"
+    )
+    for role in roles:
+        perms = await fetch_all(
+            "SELECT p.id, p.name FROM role_permissions rp "
+            "JOIN permissions p ON rp.permission_id = p.id "
+            "WHERE rp.role_id = %s",
+            [role["id"]],
+        )
+        role["permissions"] = [p["name"] for p in perms]
+    return {"roles": roles}
