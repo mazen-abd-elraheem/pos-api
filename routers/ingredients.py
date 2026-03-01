@@ -44,21 +44,21 @@ async def get_movements(
     sql = (
         "SELECT m.id, m.ingredient_id, i.name AS ingredient_name, "
         "m.movement_type, m.quantity, m.cost, m.notes, m.user, "
-        "m.reference_id, m.created_at "
+        "m.reference_id, m.movement_date "
         "FROM ingredient_stock_movements m "
         "LEFT JOIN ingredients i ON m.ingredient_id = i.id "
         "WHERE 1=1"
     )
     params = []
     if date:
-        sql += " AND DATE(m.created_at) = %s"
+        sql += " AND DATE(m.movement_date) = %s"
         params.append(date)
-    sql += " ORDER BY m.created_at DESC LIMIT 500"
+    sql += " ORDER BY m.movement_date DESC LIMIT 500"
 
     rows = await fetch_all(sql, params)
     for r in rows:
-        if isinstance(r.get("created_at"), datetime):
-            r["created_at"] = r["created_at"].isoformat()
+        if isinstance(r.get("movement_date"), datetime):
+            r["movement_date"] = r["movement_date"].isoformat()
     return {"movements": rows}
 
 

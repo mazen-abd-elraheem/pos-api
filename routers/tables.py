@@ -44,7 +44,7 @@ async def tables_with_status(user_data: dict = Depends(get_current_user)):
 
     # Get all order items grouped by table
     items = await fetch_all(
-        "SELECT table_id, status AS item_status, "
+        "SELECT table_id, sent_to_kitchen, "
         "COALESCE(price, 0) * COALESCE(quantity, 1) AS line_total "
         "FROM table_order_items"
     )
@@ -56,9 +56,9 @@ async def tables_with_status(user_data: dict = Depends(get_current_user)):
         if tid not in stats:
             stats[tid] = {"pending_items": 0, "sent_items": 0, "total_amount": 0.0}
         s = stats[tid]
-        if item["item_status"] == "pending":
+        if item["sent_to_kitchen"] == 0:
             s["pending_items"] += 1
-        elif item["item_status"] in ("sent", "served"):
+        else:
             s["sent_items"] += 1
         s["total_amount"] += float(item["line_total"] or 0)
 
@@ -102,8 +102,8 @@ async def add_table_item(table_id: int, body: dict, user_data: dict = Depends(ge
     notes = body.get("notes", "")
 
     item_id = await execute(
-        "INSERT INTO table_order_items (table_id, product_id, quantity, price, notes, status, created_at) "
-        "VALUES (%s, %s, %s, %s, %s, 'pending', NOW())",
+        "INSERT INTO table_order_items (table_id, product_id, quantity, price, notes, sent_to_kitchen, created_at) "
+        "VALUES (%s, %s, %s, %s, %s, 0, NOW())",
         [table_id, product_id, quantity, price, notes],
     )
 
@@ -117,8 +117,8 @@ async def add_table_item(table_id: int, body: dict, user_data: dict = Depends(ge
 async def send_items_to_kitchen(table_id: int, user_data: dict = Depends(get_current_user)):
     """PUT /api/tables/{id}/items/send — mark all pending items as sent."""
     await execute(
-        "UPDATE table_order_items SET status = 'sent', sent_at = NOW() "
-        "WHERE table_id = %s AND status = 'pending'",
+        "UPDATE table_order_items SET sent_to_kitchen = 1, sent_at = NOW() "
+        "WHERE table_id = %s AND sent_to_kitchen = 0",
         [table_id],
     )
     await _bump_version()

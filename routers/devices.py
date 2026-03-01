@@ -118,11 +118,14 @@ async def log_audit(body: dict = Body(...), user: dict = Depends(get_current_use
 @router.get("/sales-summary")
 async def device_sales_summary(user: dict = Depends(get_current_user)):
     """GET /api/devices/sales-summary"""
-    rows = await fetch_all(
-        "SELECT d.device_id, d.device_name, d.location, "
-        "COALESCE(COUNT(ds.id), 0) AS total_sales, "
-        "COALESCE(SUM(ds.total_amount), 0) AS total_amount "
-        "FROM devices d LEFT JOIN device_sales ds ON d.id = ds.device_id "
-        "GROUP BY d.id ORDER BY total_amount DESC"
-    )
-    return {"summary": rows}
+    try:
+        rows = await fetch_all(
+            "SELECT id, device_id, device_name, location, is_active, last_seen "
+            "FROM devices ORDER BY last_seen DESC"
+        )
+        for r in rows:
+            if isinstance(r.get("last_seen"), datetime):
+                r["last_seen"] = r["last_seen"].isoformat()
+        return {"summary": rows}
+    except Exception:
+        return {"summary": []}

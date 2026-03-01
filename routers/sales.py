@@ -85,6 +85,20 @@ async def store(body: dict, user_data: dict = Depends(get_current_user)):
 
     queries: list[tuple[str, list]] = []
 
+    # 0. Ensure valid report_id (stock_exits FK → reports.id)
+    if not report_id:
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        existing_report = await fetch_one(
+            "SELECT id FROM reports WHERE date = %s LIMIT 1", [today_str]
+        )
+        if existing_report:
+            report_id = existing_report["id"]
+        else:
+            report_id = await execute(
+                "INSERT INTO reports (name, date, cashier, employee) VALUES (%s, %s, %s, %s)",
+                [f"Auto-{today_str}", today_str, employee, employee]
+            )
+
     # 1. Insert sale record
     queries.append((
         "INSERT INTO sales (order_number, date, time, products, total_items, total_amount, "
