@@ -4,6 +4,13 @@ Drop-in replacement for the PHP API (index.php), optimized for Vercel Serverless
 """
 
 import os
+import sys
+
+# Ensure root directory is always on sys.path
+root_dir = os.path.dirname(os.path.abspath(__file__))
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
 import time
 import logging
 from contextlib import asynccontextmanager
@@ -66,18 +73,24 @@ logger = logging.getLogger("pos-api")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Warm up DB pool on startup, close on shutdown."""
-    dialect_name = getattr(engine.dialect, "name", "unknown")
-    logger.info(f"Starting POS FastAPI — DB Dialect: {dialect_name}")
-    await get_pool()
-    logger.info("DB pool ready")
     try:
-        from services.inventory_service import check_and_create_daily_snapshot
-        await check_and_create_daily_snapshot()
+        dialect_name = getattr(engine.dialect, "name", "unknown")
+        logger.info(f"Starting POS FastAPI — DB Dialect: {dialect_name}")
+        await get_pool()
+        logger.info("DB pool ready")
+        try:
+            from services.inventory_service import check_and_create_daily_snapshot
+            await check_and_create_daily_snapshot()
+        except Exception as e:
+            logger.warning(f"Startup daily snapshot check: {e}")
     except Exception as e:
-        logger.warning(f"Startup daily snapshot check: {e}")
+        logger.error(f"Lifespan startup warning: {e}")
     yield
-    await close_pool()
-    logger.info("Shutdown complete")
+    try:
+        await close_pool()
+        logger.info("Shutdown complete")
+    except Exception as e:
+        logger.warning(f"Lifespan shutdown error: {e}")
 
 
 # ──────────────────────────────────────────────
