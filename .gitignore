@@ -1,0 +1,19 @@
+# Environment & credentials
+.env
+.env.azure
+.env.hostinger
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+antenv/
+venv/
+.venv/
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/

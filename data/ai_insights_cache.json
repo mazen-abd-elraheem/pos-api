@@ -1,0 +1,114 @@
+{
+  "health_score": 75,
+  "executive_summary": "Immediate attention is required for low stock items, particularly 't-shirt'. The store has generated approximately 55220.00 in sales, with notable recent activity. Several refund/void incidents have been logged, necessitating an audit of associated transactions and employee training. Top customers, such as 'mazen', contribute significantly to revenue and should be prioritized for engagement to enhance retention.",
+  "waste": {
+    "total_waste_cost": 1000.0,
+    "waste_items": [
+      {
+        "name": "t-shirt",
+        "stock_qty": 19,
+        "expiry_days": 13,
+        "waste_percentage": 5.0,
+        "status": "stable"
+      }
+    ]
+  },
+  "sellers": {
+    "top_by_units": [
+      {
+        "name": "cap",
+        "units_sold": 38,
+        "trend_pct": -5.62
+      },
+      {
+        "name": "hoodie",
+        "units_sold": 33,
+        "trend_pct": 25.0
+      },
+      {
+        "name": "pink hoodie",
+        "units_sold": 29,
+        "trend_pct": 5.0
+      },
+      {
+        "name": "green hoodie",
+        "units_sold": 12,
+        "trend_pct": -10.0
+      },
+      {
+        "name": "t-shirt",
+        "units_sold": 1,
+        "trend_pct": -5.0
+      }
+    ]
+  },
+  "forecast": {
+    "forecast": [
+      {
+        "day": "Mon",
+        "predicted": 1650.0
+      },
+      {
+        "day": "Tue",
+        "predicted": 1282.5
+      },
+      {
+        "day": "Wed",
+        "predicted": 1373.81
+      },
+      {
+        "day": "Thu",
+        "predicted": 137.5
+      },
+      {
+        "day": "Fri",
+        "predicted": 692.68
+      },
+      {
+        "day": "Sat",
+        "predicted": 1787.5
+      },
+      {
+        "day": "Sun",
+        "predicted": 0.0
+      }
+    ]
+  },
+  "fraud": {
+    "alerts": [
+      {
+        "user_name": "Unknown",
+        "risk_score": 74,
+        "voids": 2,
+        "last_incident": "2026-01-18 18:03:52"
+      }
+    ]
+  },
+  "retention": {
+    "churn_risks": [
+      {
+        "name": "mazen",
+        "days_inactive": 34,
+        "churn_probability": 0.58,
+        "total_spent": 16650.0
+      },
+      {
+        "name": "kareem",
+        "days_inactive": 82,
+        "churn_probability": 0.77,
+        "total_spent": 400.0
+      }
+    ]
+  },
+  "recommendations": [
+    {
+      "name": "Optimize Inventory Levels",
+      "reason": "The 't-shirt' product is at a critical low stock of 19 units. Implement an automated reordering system for fast-moving items to prevent stockouts and minimize lost sales opportunities, aiming for an optimal stock of 20 units per item."
+    },
+    {
+      "name": "Fraud & Refund Protocol Review",
+      "reason": "With 1 employee(s) involved in recent refund/void transactions, it is crucial to review existing protocols. Conduct training on proper refund procedures and monitor high-risk employees (e.g., 'Unknown') to mitigate potential fraud or operational errors."
+    }
+  ],
+  "completed_at": "2026-10-09 15:31:57"
+}
