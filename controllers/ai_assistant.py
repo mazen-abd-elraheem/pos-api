@@ -4,7 +4,10 @@ import os
 from datetime import datetime
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
 
 from core.database import fetch_all, execute
 from auth.security import get_current_user
