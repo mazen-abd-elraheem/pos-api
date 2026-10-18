@@ -12,7 +12,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 
-from core.database import fetch_one, execute
+from core.database import fetch_one, execute, engine
 
 logger = logging.getLogger("license_service")
 
@@ -115,21 +115,35 @@ def validate_license_key(key: str) -> Dict[str, Any]:
 
 
 async def ensure_license_schema():
-    """Ensure license_history table exists in database."""
+    """Ensure license_history table exists in database across MySQL and PostgreSQL."""
     try:
-        await execute("""
-        CREATE TABLE IF NOT EXISTS license_history (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            license_key VARCHAR(100) NOT NULL UNIQUE,
-            plan VARCHAR(50) NOT NULL,
-            days INT NOT NULL,
-            device_uuid VARCHAR(100) NOT NULL,
-            activated_at DATETIME NOT NULL,
-            expires_at DATETIME NOT NULL,
-            INDEX idx_key (license_key),
-            INDEX idx_device (device_uuid)
-        )
-        """)
+        dialect_name = getattr(engine.dialect, "name", "mysql")
+        if dialect_name == "postgresql":
+            await execute("""
+            CREATE TABLE IF NOT EXISTS license_history (
+                id SERIAL PRIMARY KEY,
+                license_key VARCHAR(100) NOT NULL UNIQUE,
+                plan VARCHAR(50) NOT NULL,
+                days INT NOT NULL,
+                device_uuid VARCHAR(100) NOT NULL,
+                activated_at TIMESTAMP NOT NULL,
+                expires_at TIMESTAMP NOT NULL
+            )
+            """)
+        else:
+            await execute("""
+            CREATE TABLE IF NOT EXISTS license_history (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                license_key VARCHAR(100) NOT NULL UNIQUE,
+                plan VARCHAR(50) NOT NULL,
+                days INT NOT NULL,
+                device_uuid VARCHAR(100) NOT NULL,
+                activated_at DATETIME NOT NULL,
+                expires_at DATETIME NOT NULL,
+                INDEX idx_key (license_key),
+                INDEX idx_device (device_uuid)
+            )
+            """)
     except Exception as e:
         logger.warning(f"ensure_license_schema: {e}")
 

@@ -33,6 +33,7 @@ def _load_jwt_secret() -> str:
 class Settings:
     """Application settings read from environment variables."""
 
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "")
     DB_HOST: str = os.getenv("DB_HOST", "pos-server-system.mysql.database.azure.com")
     DB_PORT: int = int(os.getenv("DB_PORT", "3306"))
     DB_NAME: str = os.getenv("DB_NAME", "pos-system")

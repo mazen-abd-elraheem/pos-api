@@ -5,8 +5,6 @@ aiomysql>=0.2.0
 PyJWT>=2.8.0
 bcrypt>=4.1.0
 python-dotenv>=1.0.0
-<<<<<<< HEAD
-=======
 SQLAlchemy>=2.0.0
 cryptography>=41.0.0
 reportlab>=4.0.0
@@ -15,4 +13,7 @@ python-bidi>=0.4.2
 qrcode[pil]>=7.4.2
 httpx>=0.25.0
 Pillow>=10.0.0
->>>>>>> origin/master
+asyncpg>=0.29.0
+psycopg2-binary>=2.9.9
+greenlet>=3.0.0
+pymysql>=1.1.0

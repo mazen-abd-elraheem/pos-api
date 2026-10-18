@@ -47,18 +47,15 @@ async def update(body: dict, user_data: dict = Depends(get_current_user)):
             {"error": True, "message": "Admin access required"}, status_code=403
         )
 
-    queries = []
-    for key, value in body.items():
-        val = json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else str(value)
-        queries.append((
-            "INSERT INTO app_config (config_key, config_value, updated_at) "
-            "VALUES (%s, %s, NOW()) "
-            "ON DUPLICATE KEY UPDATE config_value = VALUES(config_value), updated_at = NOW()",
-            [key, val],
-        ))
-
+    from core.database import fetch_one, execute
     try:
-        await execute_transaction(queries)
+        for key, value in body.items():
+            val = json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else str(value)
+            row = await fetch_one("SELECT id FROM app_config WHERE config_key = %s LIMIT 1", [key])
+            if row:
+                await execute("UPDATE app_config SET config_value = %s WHERE id = %s", [val, row["id"]])
+            else:
+                await execute("INSERT INTO app_config (config_key, config_value) VALUES (%s, %s)", [key, val])
         return {"message": "Settings updated"}
     except Exception as e:
         return JSONResponse(
@@ -207,15 +204,14 @@ async def get_whatsapp_settings(user_data: Optional[dict] = Depends(get_optional
 @router.post("/whatsapp")
 async def save_whatsapp_settings(body: dict, user_data: dict = Depends(get_current_user)):
     """POST /api/settings/whatsapp"""
-    from core.database import execute
+    from core.database import fetch_one, execute
     try:
         val = json.dumps(body)
-        await execute(
-            "INSERT INTO app_config (config_key, config_value, updated_at) "
-            "VALUES ('whatsapp_config', %s, NOW()) "
-            "ON DUPLICATE KEY UPDATE config_value = VALUES(config_value), updated_at = NOW()",
-            [val]
-        )
+        row = await fetch_one("SELECT id FROM app_config WHERE config_key = 'whatsapp_config' LIMIT 1")
+        if row:
+            await execute("UPDATE app_config SET config_value = %s WHERE id = %s", [val, row["id"]])
+        else:
+            await execute("INSERT INTO app_config (config_key, config_value) VALUES ('whatsapp_config', %s)", [val])
         return {"message": "WhatsApp settings saved"}
     except Exception as e:
         return JSONResponse({"error": True, "message": str(e)}, status_code=500)
