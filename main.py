@@ -11,12 +11,13 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
-from config import settings
-from database import get_pool, close_pool, fetch_one, fetch_all
+from core.config import settings
+from core.database import get_pool, close_pool, fetch_one, fetch_all
 
 # Import routers
-from routers import (
+from controllers import (
     auth,
     startup,
     products,
@@ -35,8 +36,14 @@ from routers import (
     payments,
     config,
     devices,
-    tenants,
     bills,
+    branches,
+    subscriptions,
+    sync,
+    uploads,
+    ai_assistant,
+    licenses,
+    invoices,
 )
 
 # ──────────────────────────────────────────────
@@ -60,6 +67,11 @@ async def lifespan(app: FastAPI):
     logger.info(f"Starting POS FastAPI — DB: {settings.DB_HOST}/{settings.DB_NAME}")
     await get_pool()
     logger.info("DB pool ready")
+    try:
+        from services.inventory_service import check_and_create_daily_snapshot
+        await check_and_create_daily_snapshot()
+    except Exception as e:
+        logger.warning(f"Startup daily snapshot check: {e}")
     yield
     await close_pool()
     logger.info("Shutdown complete")
@@ -75,6 +87,10 @@ app = FastAPI(
     description="POS REST API — FastAPI Edition",
     lifespan=lifespan,
 )
+
+import os
+os.makedirs("uploads", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # Gzip compression
 app.add_middleware(GZipMiddleware, minimum_size=500)
@@ -138,8 +154,14 @@ app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
 app.include_router(config.router, prefix="/api/config", tags=["Config"])
 app.include_router(devices.router, prefix="/api/devices", tags=["Devices"])
-app.include_router(tenants.router, prefix="/api/tenants", tags=["Tenants"])
+app.include_router(ai_assistant.router, prefix="/api/ai", tags=["AI Assistant"])
 app.include_router(bills.router, prefix="/api/bills", tags=["Bills"])
+app.include_router(branches.router, prefix="/api/branches", tags=["Branches"])
+app.include_router(subscriptions.router, prefix="/api/subscriptions", tags=["Subscriptions"])
+app.include_router(sync.router, prefix="/api/sync", tags=["Sync"])
+app.include_router(uploads.router, prefix="/api/upload", tags=["Upload"])
+app.include_router(licenses.router, prefix="/api/licenses", tags=["Licenses"])
+app.include_router(invoices.router, prefix="/api/invoices", tags=["Invoices"])
 
 
 # ──────────────────────────────────────────────
@@ -155,10 +177,10 @@ async def health_check():
         "engine": "fastapi",
     }
     try:
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute("SELECT 1")
+        from sqlalchemy import text
+        engine = await get_pool()
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
 
         health["database"] = "connected"
 

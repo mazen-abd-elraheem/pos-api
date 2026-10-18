@@ -1,0 +1,215 @@
+"""
+Permissions Router — GET /api/permissions/batch
+Mirrors PHP PermissionController.php
+"""
+
+from typing import Optional
+from fastapi import APIRouter, Depends, Query
+
+from core.database import fetch_all, fetch_one
+from auth.security import get_current_user, get_optional_user
+from fastapi.responses import JSONResponse
+
+router = APIRouter()
+
+
+@router.get("/batch")
+async def batch_get(
+    user_id: int | None = Query(None),
+    user_data: Optional[dict] = Depends(get_optional_user),
+):
+    """GET /api/permissions/batch?user_id=X — all granted permissions for a user."""
+    target_user_id = user_id or (user_data["user_id"] if user_data else None)
+    if not target_user_id:
+        return {"permissions": [], "role": ""}
+
+    user = await fetch_one("SELECT id, role FROM users WHERE id = %s", [target_user_id])
+    if not user:
+        return JSONResponse({"error": True, "message": "User not found"}, status_code=404)
+
+    # Master admin gets ALL
+    if user["role"] == "master_admin":
+        all_perms = await fetch_all("SELECT name FROM permissions")
+        return {
+            "permissions": [p["name"] for p in all_perms],
+            "role": "master_admin",
+        }
+
+    granted: dict[str, bool] = {}
+
+    # Role-based permissions
+    role_obj = await fetch_one("SELECT id FROM roles WHERE name = %s", [user["role"]])
+    if role_obj:
+        role_perms = await fetch_all(
+            "SELECT p.name FROM role_permissions rp "
+            "JOIN permissions p ON rp.permission_id = p.id "
+            "WHERE rp.role_id = %s",
+            [role_obj["id"]],
+        )
+        for rp in role_perms:
+            granted[rp["name"]] = True
+
+    # User-specific overrides
+    user_perms = await fetch_all(
+        "SELECT p.name, up.granted FROM user_permissions up "
+        "JOIN permissions p ON up.permission_id = p.id "
+        "WHERE up.user_id = %s",
+        [target_user_id],
+    )
+    for up in user_perms:
+        if up["granted"]:
+            granted[up["name"]] = True
+        else:
+            granted.pop(up["name"], None)
+
+    return {
+        "permissions": list(granted.keys()),
+        "role": user["role"],
+    }
+
+
+@router.get("/roles")
+async def get_roles(user_data: Optional[dict] = Depends(get_optional_user)):
+    """GET /api/permissions/roles — all roles."""
+    rows = await fetch_all(
+        "SELECT id, name, display_name, description, level "
+        "FROM roles ORDER BY level ASC"
+    )
+    return {"roles": rows}
+
+
+@router.get("/all")
+async def get_all_permissions(user_data: Optional[dict] = Depends(get_optional_user)):
+    """GET /api/permissions/all — all permission names."""
+    rows = await fetch_all("SELECT id, name, description, category FROM permissions ORDER BY category ASC, name ASC")
+    return {"permissions": rows}
+
+
+@router.get("/roles-detail")
+async def get_roles_with_permissions(user_data: Optional[dict] = Depends(get_optional_user)):
+    """GET /api/permissions/roles-detail — roles with their assigned permissions."""
+    roles = await fetch_all(
+        "SELECT id, name, display_name, description, level "
+        "FROM roles ORDER BY level ASC"
+    )
+    for role in roles:
+        perms = await fetch_all(
+            "SELECT p.id, p.name FROM role_permissions rp "
+            "JOIN permissions p ON rp.permission_id = p.id "
+            "WHERE rp.role_id = %s",
+            [role["id"]],
+        )
+        role["permissions"] = [p["name"] for p in perms]
+    return {"roles": roles}
+
+
+@router.post("/grant")
+async def grant_permission(body: dict, user_data: dict = Depends(get_current_user)):
+    """POST /api/permissions/grant — grant a permission to a user."""
+    from core.database import fetch_one as _fetch_one
+    user_id = body.get("user_id")
+    permission_name = body.get("permission_name")
+    granted_by = body.get("granted_by", user_data.get("user_id"))
+
+    perm = await _fetch_one("SELECT id FROM permissions WHERE name = %s", [permission_name])
+    if not perm:
+        return JSONResponse({"error": True, "message": "Permission not found"}, status_code=404)
+
+    existing = await _fetch_one(
+        "SELECT id FROM user_permissions WHERE user_id = %s AND permission_id = %s",
+        [user_id, perm["id"]],
+    )
+    if existing:
+        await execute(
+            "UPDATE user_permissions SET granted = 1, granted_by = %s WHERE id = %s",
+            [granted_by, existing["id"]],
+        )
+    else:
+        await execute(
+            "INSERT INTO user_permissions (user_id, permission_id, granted, granted_by) VALUES (%s, %s, 1, %s)",
+            [user_id, perm["id"], granted_by],
+        )
+    return {"success": True, "message": f"Permission '{permission_name}' granted"}
+
+
+@router.post("/revoke")
+async def revoke_permission(body: dict, user_data: dict = Depends(get_current_user)):
+    """POST /api/permissions/revoke — revoke a permission from a user."""
+    from core.database import fetch_one as _fetch_one
+    user_id = body.get("user_id")
+    permission_name = body.get("permission_name")
+
+    perm = await _fetch_one("SELECT id FROM permissions WHERE name = %s", [permission_name])
+    if not perm:
+        return JSONResponse({"error": True, "message": "Permission not found"}, status_code=404)
+
+    existing = await _fetch_one(
+        "SELECT id FROM user_permissions WHERE user_id = %s AND permission_id = %s",
+        [user_id, perm["id"]],
+    )
+    if existing:
+        await execute("UPDATE user_permissions SET granted = 0 WHERE id = %s", [existing["id"]])
+    else:
+        await execute(
+            "INSERT INTO user_permissions (user_id, permission_id, granted) VALUES (%s, %s, 0)",
+            [user_id, perm["id"]],
+        )
+    return {"success": True, "message": f"Permission '{permission_name}' revoked"}
+
+
+@router.put("/batch")
+async def batch_update_permissions(body: dict, user_data: dict = Depends(get_current_user)):
+    """PUT /api/permissions/batch — grant/revoke multiple permissions at once."""
+    user_id = body.get("user_id")
+    to_grant = body.get("to_grant", [])
+    to_revoke = body.get("to_revoke", [])
+    granted_by = body.get("granted_by", user_data.get("user_id"))
+
+    all_names = list(set(to_grant + to_revoke))
+    if not all_names:
+        return {"success": True, "message": "Nothing to update"}
+
+    perms = await fetch_all(
+        "SELECT id, name FROM permissions WHERE name IN (%s)" % ",".join(["%s"] * len(all_names)),
+        all_names,
+    )
+    perm_map = {p["name"]: p["id"] for p in perms}
+
+    for name in to_grant:
+        pid = perm_map.get(name)
+        if not pid:
+            continue
+        from core.database import fetch_one as _fetch_one
+        existing = await _fetch_one(
+            "SELECT id FROM user_permissions WHERE user_id = %s AND permission_id = %s",
+            [user_id, pid],
+        )
+        if existing:
+            await execute(
+                "UPDATE user_permissions SET granted = 1, granted_by = %s WHERE id = %s",
+                [granted_by, existing["id"]],
+            )
+        else:
+            await execute(
+                "INSERT INTO user_permissions (user_id, permission_id, granted, granted_by) VALUES (%s, %s, 1, %s)",
+                [user_id, pid, granted_by],
+            )
+
+    for name in to_revoke:
+        pid = perm_map.get(name)
+        if not pid:
+            continue
+        from core.database import fetch_one as _fetch_one
+        existing = await _fetch_one(
+            "SELECT id FROM user_permissions WHERE user_id = %s AND permission_id = %s",
+            [user_id, pid],
+        )
+        if existing:
+            await execute("UPDATE user_permissions SET granted = 0 WHERE id = %s", [existing["id"]])
+        else:
+            await execute(
+                "INSERT INTO user_permissions (user_id, permission_id, granted) VALUES (%s, %s, 0)",
+                [user_id, pid],
+            )
+
+    return {"success": True, "message": f"Updated {len(to_grant)} grants, {len(to_revoke)} revokes"}
