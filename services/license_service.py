@@ -49,7 +49,7 @@ EDITIONS = {
 
 def get_device_uuid() -> str:
     """Generate or retrieve persistent machine identifier."""
-    uuid_file = os.path.join(os.path.dirname(__file__), "..", ".device_uuid")
+    uuid_file = "/tmp/.device_uuid" if os.name != "nt" else os.path.join(os.path.dirname(__file__), "..", ".device_uuid")
     try:
         if os.path.exists(uuid_file):
             with open(uuid_file, "r") as f:

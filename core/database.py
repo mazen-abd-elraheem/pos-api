@@ -33,8 +33,25 @@ def _build_database_config():
 
         # Handle PostgreSQL / Supabase
         if scheme in ("postgres", "postgresql", "postgresql+asyncpg"):
-            # Ensure asyncpg driver
             target_scheme = "postgresql+asyncpg"
+
+            hostname = parsed.hostname or ""
+            port = parsed.port or 5432
+            username = parsed.username or "postgres"
+            password = parsed.password or ""
+
+            # Supabase direct host (db.<ref>.supabase.co) is IPv6-only, causing [Errno 99] on Vercel.
+            # Auto-route to Supabase's IPv4 Transaction Pooler (port 6543).
+            if hostname.startswith("db.") and hostname.endswith(".supabase.co"):
+                ref = hostname.split(".")[1]
+                hostname = "aws-0-eu-west-2.pooler.supabase.com"
+                port = 6543
+                if username == "postgres":
+                    username = f"postgres.{ref}"
+
+            _quoted_user = urllib.parse.quote_plus(username)
+            _quoted_pwd = f":{urllib.parse.quote_plus(password)}" if password else ""
+            netloc = f"{_quoted_user}{_quoted_pwd}@{hostname}:{port}"
 
             # Parse query params and strip asyncpg-incompatible options like sslmode
             query_params = parse_qs(parsed.query)
@@ -43,7 +60,7 @@ def _build_database_config():
             clean_query = urlencode(query_params, doseq=True)
             clean_url = urlunparse((
                 target_scheme,
-                parsed.netloc,
+                netloc,
                 parsed.path,
                 parsed.params,
                 clean_query,
@@ -55,10 +72,10 @@ def _build_database_config():
             ssl_ctx.verify_mode = ssl.CERT_NONE
 
             # Supabase connection pooler (port 6543) uses pgBouncer in transaction mode.
-            # Setting prepared_statement_cache_size=0 avoids prepared statement conflicts.
+            # Setting statement_cache_size=0 avoids prepared statement conflicts with pgBouncer.
             connect_args = {
                 "ssl": ssl_ctx,
-                "prepared_statement_cache_size": 0,
+                "statement_cache_size": 0,
             }
             return clean_url, connect_args, "postgresql"
 

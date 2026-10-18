@@ -151,9 +151,21 @@ async def global_exception_handler(request: Request, exc: Exception):
     import traceback
     logger.error(f"Unhandled error on {request.method} {request.url.path}: {exc}")
     logger.error(traceback.format_exc())
+    origin = request.headers.get("origin")
+    headers = {
+        "Access-Control-Allow-Methods": "*",
+        "Access-Control-Allow-Headers": "*",
+    }
+    if origin:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+    else:
+        headers["Access-Control-Allow-Origin"] = "*"
+
     return JSONResponse(
         status_code=500,
         content={"error": True, "message": str(exc), "path": str(request.url.path)},
+        headers=headers,
     )
 
 
