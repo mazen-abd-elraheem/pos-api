@@ -170,6 +170,9 @@ def _convert_sql(sql: str, params: list | tuple) -> tuple[str, dict]:
         )
         # Convert MySQL AS UNSIGNED -> AS INTEGER
         sql = re.sub(r'\bAS\s+UNSIGNED\b', 'AS INTEGER', sql, flags=re.IGNORECASE)
+        # Convert MySQL boolean integer comparisons (is_active = 1 / 0) to PostgreSQL TRUE / FALSE
+        sql = re.sub(r'\bis_active\s*=\s*1\b', 'is_active = TRUE', sql, flags=re.IGNORECASE)
+        sql = re.sub(r'\bis_active\s*=\s*0\b', 'is_active = FALSE', sql, flags=re.IGNORECASE)
 
     if not params:
         return sql, {}
